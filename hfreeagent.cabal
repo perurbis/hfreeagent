@@ -53,7 +53,9 @@ library
   ghc-options:          -O2 -Wall -fno-warn-name-shadowing
   build-depends:        base >= 4 && < 5
                       , bytestring
+                      , text
                       , aeson
+                      , unordered-containers
                       , transformers
                       , errors
                       , either
@@ -61,14 +63,28 @@ library
                       , hoauth2 == 0.3.0
                       , http-streams == 0.6.0.0
                       , HsOpenSSL == 0.10.3.3
+                      , HandsomeSoup
+                      , hxt
 
---executable hfreeagent
+executable faGenTypes
+  hs-source-dirs:       fa-gen-types
   -- .hs or .lhs file containing the Main module.
-  -- main-is:             
-  
+  main-is:              Main.hs         
+  ghc-options:          -O2 -Wall -fno-warn-name-shadowing -threaded -fforce-recomp
   -- Modules included in this executable, other than Main.
-  -- other-modules:       
-  
+  other-modules:       
+
   -- Other library packages from which modules are imported.
-  -- build-depends:       base ==4.5.*
+  build-depends:       base ==4.5.*
+                     , hfreeagent == 0.1.0.0
+                     , bytestring
+                     , text
+                     , HandsomeSoup
+                     , hxt
+                     , aeson
+                     , unordered-containers
+                     , io-streams
+                     , hoauth2 == 0.3.0
+                     , http-streams == 0.6.0.0
+                     , HsOpenSSL == 0.10.3.3
   
