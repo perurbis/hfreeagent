@@ -3,15 +3,12 @@
 {-# LANGUAGE OverloadedStrings          #-}
 module Web.FreeAgent where
 
-import           Control.Monad.IO.Class          (MonadIO, liftIO)
-import           Data.Aeson
-import qualified Data.ByteString                 as BS
+import           Control.Monad.IO.Class          (MonadIO)
 import qualified Data.ByteString.Char8           as C8
-import           Network.Http.Client
+import           Data.Data
+
 import           Network.OAuth.OAuth2
 import           Network.OAuth.OAuth2.HttpClient
-import           OpenSSL                         (withOpenSSL)
---import           System.IO.Streams               (InputStream, OutputStream, stdout)
 
 
 import           Web.FreeAgent.OAuth2
@@ -20,15 +17,9 @@ import           Web.FreeAgent.Util
 -- a custom request
 
 
-sendRecv :: Token -> IO (Maybe Object)
-sendRecv token = withOpenSSL $ do
-  ctx <- baselineContextSSL
-  c <- openConnectionSSL ctx baseFAHost 443
-  r <- faRequest GET "company" token
-  sendRequest c r emptyBody
-  resp <- receiveResponse c aesonHandler
-  closeConnection c
-  return resp --  decode . fromStrict $ resp
+getCompany
+  :: (Data.Data.Data b, MonadIO m) => C8.ByteString -> FAMonad m b
+getCompany = apiCall "company"
 
 
 getAccessToken :: IO Token
