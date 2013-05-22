@@ -11,7 +11,7 @@ import           Data.Aeson.Types (parseMaybe)
 import qualified Data.ByteString.Char8           as BS
 import qualified Data.ByteString.Lazy          as BL
 import           Data.Data
-import qualified Data.HashMap.Strict as HM
+import qualified Data.HashMap.Strict as HMS
 import qualified Data.Text as T
 
 type Token = BS.ByteString
@@ -26,13 +26,13 @@ data AccessTokenResp = AccessTokenResp {
 data DataDecl = DD {
      dataName :: String
    , fields :: [(String, String)]
-}
+} deriving Eq
 
 instance Show DataDecl where
   show (DD name fields) = unlines $ [nameLine, fieldLines, derivingLine]
     where
       nameLine = "data " ++ name ++ " = " ++ name ++ " {"
-      fieldLines = unlines . map fieldToLine $ zip [0..] fields
+      fieldLines = unlines . map fieldToLine $ zip [(0 :: Int)..] fields
       fieldToLine (0, (fname, ftype)) = "    " ++ fname ++ " :: " ++ ftype
       fieldToLine (_, (fname, ftype)) = "  , " ++ fname ++ " :: " ++ ftype
       derivingLine = "} deriving (Show, Data, Typeable)"
@@ -40,7 +40,7 @@ instance Show DataDecl where
 parseData :: String -> Value -> Maybe DataDecl
 parseData name (Object o) = return $ DD name fields
   where
-    fields = reverse $ HM.foldrWithKey getFields [] o
+    fields = reverse $ HMS.foldrWithKey getFields [] o
     getFields k v seed = (T.unpack k, parseField v) : seed
 parseData _ _ = Nothing
     
