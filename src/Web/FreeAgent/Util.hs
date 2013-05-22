@@ -13,14 +13,11 @@ import qualified Data.ByteString.Char8         as C8
 import qualified Data.ByteString.Lazy          as BL
 import qualified Data.ByteString.Lazy.Internal as BLI
 import           Data.Data
-import           Data.Maybe
 import           Network.Http.Client
 import           OpenSSL                       (withOpenSSL)
 import           System.IO.Streams             (InputStream)
 import qualified System.IO.Streams             as S
 
-import           Web.FreeAgent.Types
--- a custom request
 
 toStrict :: BLI.ByteString -> C8.ByteString
 toStrict =  BS.concat . BL.toChunks
@@ -55,6 +52,9 @@ aesonHandler _ =  S.map decode'Strict >=> S.read >=> return . join
   where decode'Strict = decode' . fromStrict
   
 --apiCall :: Token -> IO (Maybe Object)
+apiCall
+  :: (Data b, MonadIO m) =>
+     C8.ByteString -> C8.ByteString -> FAMonad m b
 apiCall url token = do
   
   resp <- liftIO . withOpenSSL $ do
