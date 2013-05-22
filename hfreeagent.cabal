@@ -53,7 +53,9 @@ library
   ghc-options:          -O2 -Wall -fno-warn-name-shadowing
   build-depends:        base >= 4 && < 5
                       , bytestring
+                      , blaze-builder
                       , text
+                      , vector
                       , aeson
                       , unordered-containers
                       , transformers
@@ -80,6 +82,7 @@ executable faGenTypes
                      , bytestring
                      , blaze-builder
                      , text
+                     , vector
                      , HandsomeSoup
                      , hxt
                      , aeson
