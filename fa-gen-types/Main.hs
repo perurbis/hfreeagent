@@ -1,9 +1,10 @@
+{-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Main where
 
 --import           Control.Monad.IO.Class        (MonadIO, liftIO)
 import qualified Blaze.ByteString.Builder   as Builder (fromByteString, toByteString)
-import           Control.Monad              ((>=>))
+import           Control.Monad              (forM_, (>=>))
 import           Data.Aeson
 import qualified Data.ByteString            as BS
 import qualified Data.ByteString.Char8      as C8
@@ -16,9 +17,13 @@ import qualified Data.Text                  as T
 import qualified Data.Vector                as V
 import           Network.Http.Client
 import           OpenSSL                    (withOpenSSL)
+import           System.Directory
+import           System.FilePath            ((</>))
+import           System.IO
 import           System.IO.Streams          (InputStream)
 import qualified System.IO.Streams          as S
 import           System.IO.Streams.Debug
+import           System.IO.Streams.File
 import           Text.HandsomeSoup
 import           Text.XML.HXT.Core
 
@@ -35,6 +40,7 @@ faDocsHost = "dev.freeagent.com"
 type Url = C8.ByteString
 type Key = String
 
+-- | Get the contents of a webpage from a url
 getUrl :: Url -> IO C8.ByteString
 getUrl url = withOpenSSL $ do
     ctx <- baselineContextSSL
@@ -52,13 +58,21 @@ getUrl url = withOpenSSL $ do
               x <- S.fold mappend mempty i2
               return $ Builder.toByteString x
 
+-- | Get a list of links to process from FreeAgent's homepage
 docLinks :: IO (InputStream Url)
-docLinks = doExtract getLinks "/docs"
+docLinks = getUrl >=> getLinks >=> S.fromList $ "/docs"
 
-doExtract
-  :: (C8.ByteString -> IO [a]) -> Url -> IO (InputStream a)
-doExtract action = getUrl >=> action >=> S.fromList
+-- | Get a list of links to process from locally stored FreeAgent pages
+docLinksLocal :: FilePath -> IO [FilePath]
+docLinksLocal topdir = do
+  names <- getDirectoryContents topdir
+  let properNames = filter (`notElem` [".", ".."]) names
+  return $ map (topdir </>) properNames
 
+
+-- JSON EXTRACTION
+
+-- | Extract "code" blocks from html and try to parse to a 'Value'
 getJsonBlocks :: C8.ByteString -> IO [Maybe Value]
 getJsonBlocks doc' = fmap (map extractJson) jsonBlocks
   where doc = parseHtml $ C8.unpack doc'
@@ -66,7 +80,15 @@ getJsonBlocks doc' = fmap (map extractJson) jsonBlocks
         extractJson :: String -> Maybe Value
         extractJson = decode' . LC8.pack
 
+-- | Extract internal documentation links from the subnav list
+getLinks :: C8.ByteString -> IO [C8.ByteString]
+getLinks doc' = fmap (map C8.pack) links
+  --doc <- getUrl "/docs" >>= return . parseHtml
+  where doc = parseHtml $ C8.unpack doc'
+        links = runX $ doc >>> css ".subnav a" ! "href"
 
+
+-- | Try to extract tuples of @ identifying string, 'DataDecl' @ from a 'Value'
 getJsonTypes :: Value -> [(Key, Maybe DataDecl)]
 getJsonTypes (Object hm) = [(T.unpack k, parseData (capStr k) v) | (k, v) <- HMS.toList hm]
   where
@@ -78,31 +100,44 @@ getJsonTypes _ = []
 -- allJsonBlocks :: IO [BL.ByteString]
 -- allJsonBlocks = getLinks >>= mapM getJsonBlocks >>= return . concat
 
-getLinks :: C8.ByteString -> IO [C8.ByteString]
-getLinks doc' = fmap (map C8.pack) links
-  --doc <- getUrl "/docs" >>= return . parseHtml
-  where doc = parseHtml $ C8.unpack doc'
-        links = runX $ doc >>> css ".subnav a" ! "href"
+crawl :: IO ()
+crawl = do
+  links <- getLinks =<< getUrl "/docs"
+
+  forM_ links $ \lnk -> do
+     let fname = C8.unpack $ C8.tail lnk
+     putStrLn $ "Fetching " ++ fname
+     withFileAsOutputExt fname WriteMode NoBuffering $ \outStream -> do
+        inStream <- getUrl lnk >>= S.fromByteString
+        S.connect inStream outStream
 
 
 main :: IO ()
 main = do
-  links <- docLinks >>= debugInput id "LINKS" S.stdout
-  -- jsonObjs <-  >>= getJson
-  jsonObjs <- getDataDecls =<< getJson links
-  out <- S.unlines S.stdout
+  links <- getLinksFn
+  jsonObjs <- getDataDecls =<< getJson getContentFn links
+  -- out <- S.unlines S.stdout
   firstFew <- S.take 20 jsonObjs
-  ins <- S.map (C8.pack . show) firstFew
+  -- ins <- S.map (C8.pack . show) firstFew
   --S.connect ins out
-  -- S.connect links  out
   print =<< fmap length (S.toList firstFew)
+  where
+    -- getLinksFn = docLinks >>= debugInput id "LINKS" S.stdout
+    -- getContentFn = getUrl
+    getLinksFn = docLinksLocal "docs" >>= S.fromList >>= debugInput C8.pack "LINKS" S.stdout
+    getContentFn = C8.readFile
 
 getDataDecls
   :: InputStream Value -> IO (InputStream (Key, Maybe DataDecl))
 getDataDecls = S.map getJsonTypes >=> debugInput (C8.pack . show) "TYPES" S.stdout >=> S.concatLists
 
-getJson :: InputStream Url -> IO (InputStream Value)
-getJson = S.mapM (getUrl >=> getJsonBlocks) >=> debugInput lenMaybes "JSON-BLOCKS" S.stdout >=> S.map catMaybes >=> S.concatLists
+type PageFetch a b = a -> IO b
 
+getJson :: PageFetch a C8.ByteString -> InputStream a -> IO (InputStream Value)
+getJson act = S.mapM (act >=> getJsonBlocks) >=> debugInput lenMaybes "JSON-BLOCKS" S.stdout >=> S.map catMaybes >=> S.concatLists
+
+-- UTILITIES
+
+-- | Represent a list of @'Maybe' a@ as a string of @(#Just a's / # total)
 lenMaybes :: [Maybe a] -> C8.ByteString
 lenMaybes ml = C8.pack $ (show (length $ catMaybes ml)) ++ "/" ++ (show $ length ml)
