@@ -1,20 +1,24 @@
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE FlexibleInstances  #-}
+{-# LANGUAGE OverloadedStrings  #-}
 
 
 
 module Web.FreeAgent.Types where
 
+import           Control.Monad.Trans.State
 import           Data.Aeson hiding (fromJSON)
-import           Data.Aeson.Generic (fromJSON)
-import           Data.Aeson.Types (parseMaybe)
-import qualified Data.ByteString.Char8           as BS
-import qualified Data.ByteString.Lazy          as BL
+import qualified Data.ByteString.Char8 as BS
+import           Data.Char             (toUpper)
 import           Data.Data
-import qualified Data.HashMap.Strict as HMS
-import qualified Data.Text as T
+import qualified Data.HashMap.Strict   as HMS
+import qualified Data.Set              as S
+import qualified Data.Text             as T
+import qualified Data.Vector           as V
 
 type Token = BS.ByteString
+type Key = T.Text
+type FieldRep = T.Text
 
 data AccessTokenResp = AccessTokenResp {
        access_token  :: BS.ByteString
@@ -24,63 +28,64 @@ data AccessTokenResp = AccessTokenResp {
      } deriving (Show, Data, Typeable)
 
 data DataDecl = DD {
-     dataName :: String
-   , fields :: [(String, String)]
+     dataName :: T.Text
+   , fields :: [(Key, FieldRep)]
 } deriving Eq
 
+data Collection a = Col a
+
+type FieldLookup = HMS.HashMap (S.Set Key) DataDecl
+
+data ApiParseState = APS {
+     fieldLookup :: FieldLookup
+   , resolved    :: [DataDecl]
+   , unreolved   :: [Value]
+}
+
+newtype ApiState = State ApiParseState
+
+dataDeclToText :: DataDecl -> T.Text
+dataDeclToText (DD name fields) = T.unlines $ [nameLine, fieldLines, derivingLine]
+  where
+    nameLine                        = T.unwords ["data", name, "=", name, "{"]
+    fieldLines                      = T.unlines . map fieldToLine $ zip [(0 :: Int)..] fields
+    fieldToLine (0, (fname, ftype)) = T.unwords ["    ", fname, "::", ftype]
+    fieldToLine (_, (fname, ftype)) = T.unwords ["  ,", fname, "::", ftype]
+    derivingLine                    = "} deriving (Show, Data, Typeable)"
+
+collectionToText :: Collection DataDecl -> T.Text
+collectionToText (Col (DD name _)) = T.unwords ["[", name, "]"]
+
 instance Show DataDecl where
-  show (DD name fields) = unlines $ [nameLine, fieldLines, derivingLine]
-    where
-      nameLine = "data " ++ name ++ " = " ++ name ++ " {"
-      fieldLines = unlines . map fieldToLine $ zip [(0 :: Int)..] fields
-      fieldToLine (0, (fname, ftype)) = "    " ++ fname ++ " :: " ++ ftype
-      fieldToLine (_, (fname, ftype)) = "  , " ++ fname ++ " :: " ++ ftype
-      derivingLine = "} deriving (Show, Data, Typeable)"
-   
-parseData :: String -> Value -> Maybe DataDecl
+  show = T.unpack . dataDeclToText
+
+instance Show (Collection DataDecl) where
+  show = T.unpack . collectionToText
+
+parseData :: Key -> Value -> Maybe DataDecl
 parseData name (Object o) = return $ DD name fields
   where
-    fields = reverse $ HMS.foldrWithKey getFields [] o
-    getFields k v seed = (T.unpack k, parseField v) : seed
-parseData _ _ = Nothing
+    fields             = reverse $ HMS.foldrWithKey getFields [] o
+    getFields k v seed = (k, parseField k v) : seed
     
-parseField :: Value -> String
-parseField (String _) = "BS.ByteString"
-parseField (Array _)  = "[SubObject]"
-parseField (Object _) = "SubObject"
-parseField (Number _) = "Double"
-parseField (Bool _)   = "Bool"
-parseField Null       = "Maybe a"
+parseData name (Array a) = parseData name $ V.head a
+parseData _ _            = Nothing
 
-test :: Data a => FilePath -> T.Text -> IO (Maybe a)
-test fname accessor = do
-  raw <- BL.readFile fname
-  case decode raw of
-    Just jsonVal ->
-         return $ parseMaybe (.: accessor) jsonVal >>= toType
-    _ -> return Nothing
-    
-testCompany :: IO (Maybe Company)
-testCompany = test "json/company.json" "company"
+parseField :: Key -> Value -> FieldRep
+parseField _ (String s) = "BS.ByteString --" `T.append` s
+parseField k arr@(Array _)  = case parseData (unCamel k) arr of
+  Just dd -> collectionToText $ Col dd
+  Nothing -> "[SubObject]"
+parseField k (Object _) = "SubObject"
+parseField _ (Number _) = "Double"
+parseField _ (Bool _)   = "Bool"
+parseField _ Null       = "Maybe a"
 
-toType :: Data a => Value -> Maybe a
-toType val = do
-  case fromJSON val of
-    Success a -> Just a
-    _ -> Nothing
-    
-data Company = Company {
-    subdomain :: BS.ByteString
-  -- , type :: BS.ByteString
-  , mileage_units :: BS.ByteString
-  , freeagent_start_date :: BS.ByteString
-  , first_accounting_year_end :: BS.ByteString
-  , sales_tax_registration_status :: BS.ByteString
-  , currency :: BS.ByteString
-  , company_registration_number :: BS.ByteString
-  , company_start_date :: BS.ByteString
-  , url :: BS.ByteString
-  , sales_tax_registration_number :: BS.ByteString
-  , name :: BS.ByteString
 
-} deriving (Show, Data, Typeable)
+-- UTILS
+unCamel :: T.Text -> T.Text
+unCamel = T.concat . map capFirst . T.splitOn "_"
+  where capFirst word = (toUpper $ T.head word) `T.cons` T.tail word
+
+toKeySet :: [(Key, FieldRep)] -> S.Set Key
+toKeySet fields = S.fromList $ map fst fields
