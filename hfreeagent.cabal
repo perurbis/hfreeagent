@@ -58,6 +58,7 @@ library
                       , vector
                       , aeson
                       , unordered-containers
+                      , containers
                       , transformers
                       , errors
                       , either
@@ -89,6 +90,7 @@ executable faGenTypes
                      , hxt
                      , aeson
                      , unordered-containers
+                     , containers
                      , io-streams
                      , filepath
                      , directory
