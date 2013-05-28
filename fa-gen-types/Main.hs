@@ -9,7 +9,6 @@ import           Data.Aeson
 import qualified Data.ByteString            as BS
 import qualified Data.ByteString.Char8      as C8
 import qualified Data.ByteString.Lazy.Char8 as LC8
-import           Data.Char                  (toUpper)
 import qualified Data.HashMap.Strict        as HMS
 import           Data.Maybe
 import           Data.Monoid
@@ -38,7 +37,7 @@ faDocsUrl = "https://" `mappend` faDocsHost
 faDocsHost = "dev.freeagent.com"
 
 type Url = C8.ByteString
-type Key = String
+type Key = T.Text
 
 -- | Get the contents of a webpage from a url
 getUrl :: Url -> IO C8.ByteString
@@ -90,10 +89,8 @@ getLinks doc' = fmap (map C8.pack) links
 
 -- | Try to extract tuples of @ identifying string, 'DataDecl' @ from a 'Value'
 getJsonTypes :: Value -> [(Key, Maybe DataDecl)]
-getJsonTypes (Object hm) = [(T.unpack k, parseData (capStr k) v) | (k, v) <- HMS.toList hm]
-  where
-        capStr :: T.Text -> String
-        capStr txt = toUpper (T.head txt) : (T.unpack $ T.tail txt)
+getJsonTypes (Object hm) = [(k, parseData (unCamel k) v) | (k, v) <- HMS.toList hm]
+
 getJsonTypes (Array arr) = getJsonTypes $ V.head arr
 getJsonTypes _ = []
 
@@ -127,17 +124,23 @@ main = do
     getLinksFn = docLinksLocal "docs" >>= S.fromList >>= debugInput C8.pack "LINKS" S.stdout
     getContentFn = C8.readFile
 
-getDataDecls
-  :: InputStream Value -> IO (InputStream (Key, Maybe DataDecl))
+
+getDataDecls :: InputStream Value -> IO (InputStream (Key, Maybe DataDecl))
 getDataDecls = S.map getJsonTypes >=> debugInput (C8.pack . show) "TYPES" S.stdout >=> S.concatLists
 
 type PageFetch a b = a -> IO b
 
+-- | Extract json 'Values' from a link to a web page.
+-- Web page can be local or remode with the appropriate fetchAction
 getJson :: PageFetch a C8.ByteString -> InputStream a -> IO (InputStream Value)
-getJson act = S.mapM (act >=> getJsonBlocks) >=> debugInput lenMaybes "JSON-BLOCKS" S.stdout >=> S.map catMaybes >=> S.concatLists
+getJson fetchAction = S.mapM (fetchAction >=> getJsonBlocks)
+                             >=> debugInput lenMaybes "JSON-BLOCKS" S.stdout
+                             >=> S.map catMaybes
+                             >=> S.concatLists
 
 -- UTILITIES
 
 -- | Represent a list of @'Maybe' a@ as a string of @(#Just a's / # total)
 lenMaybes :: [Maybe a] -> C8.ByteString
-lenMaybes ml = C8.pack $ (show (length $ catMaybes ml)) ++ "/" ++ (show $ length ml)
+lenMaybes ml = C8.pack $ (lenStr $ catMaybes ml) </> (lenStr ml)
+  where lenStr = show . length
