@@ -2,9 +2,10 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Main where
 
---import           Control.Monad.IO.Class        (MonadIO, liftIO)
+import           Control.Monad.IO.Class        (MonadIO, liftIO)
 import qualified Blaze.ByteString.Builder   as Builder (fromByteString, toByteString)
 import           Control.Monad              (forM_, (>=>))
+import           Control.Monad.Trans.State (execStateT)
 import           Data.Aeson
 import qualified Data.ByteString            as BS
 import qualified Data.ByteString.Char8      as C8
@@ -37,7 +38,6 @@ faDocsUrl = "https://" `mappend` faDocsHost
 faDocsHost = "dev.freeagent.com"
 
 type Url = C8.ByteString
-type Key = T.Text
 
 -- | Get the contents of a webpage from a url
 getUrl :: Url -> IO C8.ByteString
@@ -87,13 +87,6 @@ getLinks doc' = fmap (map C8.pack) links
         links = runX $ doc >>> css ".subnav a" ! "href"
 
 
--- | Try to extract tuples of @ identifying string, 'DataDecl' @ from a 'Value'
-getJsonTypes :: Value -> [(Key, Maybe DataDecl)]
-getJsonTypes (Object hm) = [(k, parseData (unCamel k) v) | (k, v) <- HMS.toList hm]
-
-getJsonTypes (Array arr) = getJsonTypes $ V.head arr
-getJsonTypes _ = []
-
 -- allJsonBlocks :: IO [BL.ByteString]
 -- allJsonBlocks = getLinks >>= mapM getJsonBlocks >>= return . concat
 
@@ -112,7 +105,7 @@ crawl = do
 main :: IO ()
 main = do
   links <- getLinksFn
-  jsonObjs <- getDataDecls =<< getJson getContentFn links
+  jsonObjs <- getJson getContentFn links
   -- out <- S.unlines S.stdout
   firstFew <- S.take 20 jsonObjs
   -- ins <- S.map (C8.pack . show) firstFew
@@ -125,9 +118,6 @@ main = do
     getContentFn = C8.readFile
 
 
-getDataDecls :: InputStream Value -> IO (InputStream (Key, Maybe DataDecl))
-getDataDecls = S.map getJsonTypes >=> debugInput (C8.pack . show) "TYPES" S.stdout >=> S.concatLists
-
 type PageFetch a b = a -> IO b
 
 -- | Extract json 'Values' from a link to a web page.
@@ -137,6 +127,14 @@ getJson fetchAction = S.mapM (fetchAction >=> getJsonBlocks)
                              >=> debugInput lenMaybes "JSON-BLOCKS" S.stdout
                              >=> S.map catMaybes
                              >=> S.concatLists
+                             
+extractJsonLocal :: IO (InputStream Value)
+extractJsonLocal = docLinksLocal "docs" >>= S.fromList >>= getJson C8.readFile
+
+extractLocalState vals = do
+  lst <- vals >>= S.toList
+  let st =  mapM parseTopLevel lst
+  execStateT st initParseState
 
 -- UTILITIES
 
