@@ -5,7 +5,7 @@ module Main where
 import           Control.Monad.IO.Class        (MonadIO, liftIO)
 import qualified Blaze.ByteString.Builder   as Builder (fromByteString, toByteString)
 import           Control.Monad              (forM_, (>=>))
-import           Control.Monad.Trans.State (execStateT)
+import           Control.Monad.Trans.State (execStateT, evalStateT)
 import           Data.Aeson
 import qualified Data.ByteString            as BS
 import qualified Data.ByteString.Char8      as C8
@@ -142,3 +142,10 @@ extractLocalState vals = do
 lenMaybes :: [Maybe a] -> C8.ByteString
 lenMaybes ml = C8.pack $ (lenStr $ catMaybes ml) </> (lenStr ml)
   where lenStr = show . length
+
+-- TESTING
+testEstimates inVals = do
+  st <- extractLocalState inVals
+  evalStateT (resolveFields st) initParseState
+  
+justEstimates = (S.fromList ["docs/estimates"] >>= getJson C8.readFile)
