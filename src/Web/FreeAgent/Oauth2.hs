@@ -3,16 +3,16 @@
 {-# LANGUAGE OverloadedStrings          #-}
 module Web.FreeAgent.OAuth2 where
 
-import           Control.Error.Util
-import           Control.Monad                   (liftM)
+
+
 import           Control.Monad.IO.Class          (MonadIO, liftIO)
-import           Control.Monad.Trans.Either
+
 import           Data.Aeson.Generic
 import qualified Data.ByteString                 as BS
 import qualified Data.ByteString.Char8           as C8
-import qualified Data.ByteString.Lazy            as BL
-import qualified Data.ByteString.Lazy.Internal   as BLI
-import           Data.Maybe
+
+
+
 import           Network.Http.Client
 import           Network.OAuth.OAuth2
 import           Network.OAuth.OAuth2.HttpClient

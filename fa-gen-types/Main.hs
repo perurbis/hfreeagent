@@ -2,19 +2,16 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Main where
 
-import           Control.Monad.IO.Class        (MonadIO, liftIO)
+
 import qualified Blaze.ByteString.Builder   as Builder (fromByteString, toByteString)
-import           Control.Monad              (forM_, (>=>))
+import           Control.Monad              (forM_, forM, mapM_, (>=>))
 import           Control.Monad.Trans.State (execStateT, evalStateT)
 import           Data.Aeson
 import qualified Data.ByteString            as BS
 import qualified Data.ByteString.Char8      as C8
 import qualified Data.ByteString.Lazy.Char8 as LC8
-import qualified Data.HashMap.Strict        as HMS
 import           Data.Maybe
 import           Data.Monoid
-import qualified Data.Text                  as T
-import qualified Data.Vector                as V
 import           Network.Http.Client
 import           OpenSSL                    (withOpenSSL)
 import           System.Directory
@@ -27,11 +24,7 @@ import           System.IO.Streams.File
 import           Text.HandsomeSoup
 import           Text.XML.HXT.Core
 
-import           Web.FreeAgent.Types
-
--- import           System.IO.Streams.Debug
---import qualified Data.ByteString.Char8 as B
---import Control.Monad.Maybe
+import           Data.FreeAgent.Generate
 
 faDocsUrl, faDocsHost :: C8.ByteString
 faDocsUrl = "https://" `mappend` faDocsHost
@@ -104,13 +97,16 @@ crawl = do
 
 main :: IO ()
 main = do
-  links <- getLinksFn
-  jsonObjs <- getJson getContentFn links
-  -- out <- S.unlines S.stdout
-  firstFew <- S.take 20 jsonObjs
-  -- ins <- S.map (C8.pack . show) firstFew
-  --S.connect ins out
-  print =<< fmap length (S.toList firstFew)
+  links <- docLinksLocal "docs"
+  byModule <- extractByModule C8.readFile links
+  forM_ byModule $ \(mod, valStream) -> do
+    print "----"
+    print mod
+    st <- extractLocalState valStream
+    dataDecls <- evalStateT (resolveDependencies st) initParseState
+    mapM_ print dataDecls
+    print "#####"
+  
   where
     -- getLinksFn = docLinks >>= debugInput id "LINKS" S.stdout
     -- getContentFn = getUrl
@@ -131,6 +127,16 @@ getJson fetchAction = S.mapM (fetchAction >=> getJsonBlocks)
 extractJsonLocal :: IO (InputStream Value)
 extractJsonLocal = docLinksLocal "docs" >>= S.fromList >>= getJson C8.readFile
 
+extractByModule :: PageFetch a C8.ByteString
+                -> [a]
+                -> IO [(a, IO (InputStream Value))]
+extractByModule fetch links = do
+  forM links $ \l -> do
+    inStream <- S.fromList [l]
+    return (l, getJson fetch inStream)
+    
+
+extractLocalState :: IO (InputStream Value) -> IO (ApiParseState Value)
 extractLocalState vals = do
   lst <- vals >>= S.toList
   let st =  mapM parseTopLevel lst
@@ -146,6 +152,6 @@ lenMaybes ml = C8.pack $ (lenStr $ catMaybes ml) </> (lenStr ml)
 -- TESTING
 testEstimates inVals = do
   st <- extractLocalState inVals
-  evalStateT (resolveFields st) initParseState
+  evalStateT (resolveDependencies st) initParseState
   
 justEstimates = (S.fromList ["docs/estimates"] >>= getJson C8.readFile)

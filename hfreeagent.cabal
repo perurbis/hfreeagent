@@ -46,10 +46,13 @@ cabal-version:       >=1.8
 
 library
   hs-source-dirs:       src
+                        fa-gen-types
   exposed-modules:      Web.FreeAgent
                         Web.FreeAgent.Types
                         Web.FreeAgent.Util
                         Web.FreeAgent.OAuth2
+  -- Need this for emacs?
+  other-modules:       Data.FreeAgent.Generate
   ghc-options:          -O2 -Wall -fno-warn-name-shadowing
   build-depends:        base >= 4 && < 5
                       , bytestring
@@ -77,7 +80,7 @@ executable faGenTypes
   main-is:              Main.hs         
   ghc-options:          -O2 -Wall -fno-warn-name-shadowing -threaded -fforce-recomp
   -- Modules included in this executable, other than Main.
-  other-modules:       
+  other-modules:       Data.FreeAgent.Generate
 
   -- Other library packages from which modules are imported.
   build-depends:       base ==4.5.*
@@ -91,6 +94,7 @@ executable faGenTypes
                      , aeson
                      , unordered-containers
                      , containers
+                     , transformers
                      , io-streams
                      , filepath
                      , directory
