@@ -118,9 +118,6 @@ resolveField subs (Array arr)  =
     possibles = V.map (lookup subs) arr
     lookup hm (Object o) = HMS.lookup (HMS.keys o) hm
     lookup _ _           = Nothing
--- case parseData (toCamelCase k) arr of
---   Just dd -> collectionToText $ Col dd
---   Nothing -> "[SubObject]"
 resolveField subs (Object obj) =
   case HMS.lookup (HMS.keys obj) subs of
     Just (DD name _) -> name
