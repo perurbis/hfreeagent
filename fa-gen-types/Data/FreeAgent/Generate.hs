@@ -13,14 +13,17 @@ import           Data.Aeson                hiding (fromJSON)
 import           Data.Char                 (toUpper)
 import           Data.Function             (on)
 import qualified Data.HashMap.Strict       as HMS
-import           Data.List                 (nubBy)
+import           Data.List                 (nubBy, intersperse)
+import           Data.List.Split
 import           Data.Maybe                (catMaybes)
 import qualified Data.Set                  as S
 import qualified Data.Text                 as T
 import qualified Data.Vector               as V
+import           System.FilePath
 
 type Key = T.Text
 type FieldRep = T.Text
+type ModuleName = String
 
 data DataDecl val = DD {
        dataName :: T.Text
@@ -31,10 +34,6 @@ data DataDecl val = DD {
      , colType :: val
    }
    deriving Eq
-
-getName :: DataDecl t -> T.Text
-getName (DD  name _) = name
-getName (Col name _) = name
 
 type FieldLookup a = HMS.HashMap [Key] (DataDecl a)
 
@@ -107,7 +106,7 @@ parseTopLevel _ = return ()
 
 -- | Get the @T.Text@ name for a field's type.
 --
--- Resolves it from the state built up by @parseData@ and @parseTopLevel@
+-- Resolves the name from the state built up by @parseData@ and @parseTopLevel@
 resolveField :: FieldLookup Value -> Value -> FieldRep
 resolveField _ (String s) = T.unwords ["BS.ByteString", "--", s]
 resolveField subs (Array arr)  =
@@ -141,6 +140,12 @@ convertFieldType subs (DD name fields) = DD name strFields
 convertFieldType subs (Col name val) = Col name $ resolveField subs val
 
 -- UTILS
+
+
+getName :: DataDecl t -> T.Text
+getName (DD  name _) = name
+getName (Col name _) = name
+
 toCamelCase :: T.Text -> T.Text
 toCamelCase = T.concat . map capFirst . T.splitOn "_"
   where capFirst word = (toUpper $ T.head word) `T.cons` T.tail word
@@ -152,3 +157,25 @@ cons :: (Eq a) => a -> [a] -> [a]
 cons a as = case a `elem` as of
   True  -> as
   False -> a:as
+
+
+join :: [a] -> [[a]] -> [a]
+join delim l = concat (intersperse delim l)
+
+sepModule :: ModuleName -> [String]
+sepModule = splitOneOf "."
+
+splitUrl :: FilePath -> [FilePath]
+splitUrl = splitDirectories
+
+addHs :: FilePath -> FilePath
+addHs = flip replaceExtension $ "hs"
+
+docLinkToModuleName :: FilePath -> FilePath -> ModuleName
+docLinkToModuleName prefix link = join "." $ prefix:linkElems
+  where camelize = T.unpack . toCamelCase . T.pack
+        linkElems = drop 1 . map camelize $ splitUrl link
+
+moduleToFileName :: ModuleName -> FilePath
+moduleToFileName = addHs . joinPath . sepModule
+
