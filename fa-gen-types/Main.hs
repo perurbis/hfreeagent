@@ -1,21 +1,24 @@
-{-# LANGUAGE EmptyDataDecls #-}
+{-# LANGUAGE EmptyDataDecls    #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Main where
 
 
 import qualified Blaze.ByteString.Builder   as Builder (fromByteString, toByteString)
-import           Control.Monad              (forM_, forM, mapM_, (>=>))
-import           Control.Monad.Trans.State (execStateT, evalStateT)
+import           Control.Monad
+import           Control.Monad.Trans.State  (evalStateT, execStateT)
 import           Data.Aeson
 import qualified Data.ByteString            as BS
 import qualified Data.ByteString.Char8      as C8
 import qualified Data.ByteString.Lazy.Char8 as LC8
+
 import           Data.Maybe
 import           Data.Monoid
+import qualified Data.Text                  as T
+import qualified Data.Text.Encoding         as TE
 import           Network.Http.Client
 import           OpenSSL                    (withOpenSSL)
 import           System.Directory
-import           System.FilePath            ((</>))
+import           System.FilePath            (splitPath, takeDirectory, (</>))
 import           System.IO
 import           System.IO.Streams          (InputStream)
 import qualified System.IO.Streams          as S
@@ -26,11 +29,13 @@ import           Text.XML.HXT.Core
 
 import           Data.FreeAgent.Generate
 
+
 faDocsUrl, faDocsHost :: C8.ByteString
 faDocsUrl = "https://" `mappend` faDocsHost
 faDocsHost = "dev.freeagent.com"
 
 type Url = C8.ByteString
+type PageFetch a b = a -> IO b
 
 -- | Get the contents of a webpage from a url
 getUrl :: Url -> IO C8.ByteString
@@ -80,42 +85,6 @@ getLinks doc' = fmap (map C8.pack) links
         links = runX $ doc >>> css ".subnav a" ! "href"
 
 
--- allJsonBlocks :: IO [BL.ByteString]
--- allJsonBlocks = getLinks >>= mapM getJsonBlocks >>= return . concat
-
-crawl :: IO ()
-crawl = do
-  links <- getLinks =<< getUrl "/docs"
-
-  forM_ links $ \lnk -> do
-     let fname = C8.unpack $ C8.tail lnk
-     putStrLn $ "Fetching " ++ fname
-     withFileAsOutputExt fname WriteMode NoBuffering $ \outStream -> do
-        inStream <- getUrl lnk >>= S.fromByteString
-        S.connect inStream outStream
-
-
-main :: IO ()
-main = do
-  links <- docLinksLocal "docs"
-  byModule <- extractByModule C8.readFile links
-  forM_ byModule $ \(mod, valStream) -> do
-    print "----"
-    print mod
-    st <- extractLocalState valStream
-    dataDecls <- evalStateT (resolveDependencies st) initParseState
-    mapM_ print dataDecls
-    print "#####"
-  
-  where
-    -- getLinksFn = docLinks >>= debugInput id "LINKS" S.stdout
-    -- getContentFn = getUrl
-    getLinksFn = docLinksLocal "docs" >>= S.fromList >>= debugInput C8.pack "LINKS" S.stdout
-    getContentFn = C8.readFile
-
-
-type PageFetch a b = a -> IO b
-
 -- | Extract json 'Values' from a link to a web page.
 -- Web page can be local or remode with the appropriate fetchAction
 getJson :: PageFetch a C8.ByteString -> InputStream a -> IO (InputStream Value)
@@ -123,7 +92,7 @@ getJson fetchAction = S.mapM (fetchAction >=> getJsonBlocks)
                              >=> debugInput lenMaybes "JSON-BLOCKS" S.stdout
                              >=> S.map catMaybes
                              >=> S.concatLists
-                             
+
 extractJsonLocal :: IO (InputStream Value)
 extractJsonLocal = docLinksLocal "docs" >>= S.fromList >>= getJson C8.readFile
 
@@ -134,13 +103,59 @@ extractByModule fetch links = do
   forM links $ \l -> do
     inStream <- S.fromList [l]
     return (l, getJson fetch inStream)
-    
+
 
 extractLocalState :: IO (InputStream Value) -> IO (ApiParseState Value)
 extractLocalState vals = do
   lst <- vals >>= S.toList
   let st =  mapM parseTopLevel lst
   execStateT st initParseState
+
+
+-- allJsonBlocks :: IO [BL.ByteString]
+-- allJsonBlocks = getLinks >>= mapM getJsonBlocks >>= return . concat
+
+-- | Mirror all of the FreeAgent docs locally
+crawl :: IO ()
+crawl = do
+  links <- getLinks =<< getUrl "/docs"
+  forM_ links $ \lnk -> do
+     let fname = C8.unpack $ C8.tail lnk
+     putStrLn $ "Fetching " ++ fname
+     withFileAsOutputExt fname WriteMode NoBuffering $ \outStream -> do
+        inStream <- getUrl lnk >>= S.fromByteString
+        S.connect inStream outStream
+
+writeModule :: ModuleName -> [DataDecl a] -> IO ()
+writeModule moduleName = undefined
+
+main :: IO ()
+main = do
+  links <- docLinksLocal "docs"
+  byModule <- extractByModule C8.readFile links
+  forM_ (take 5 byModule) $ \(link, valStream) -> do
+    print "----"
+    let moduleName = docLinkToModuleName "Data.FreeAgent.Types" link
+    let fname = "src" </> moduleToFileName moduleName
+    let dir = takeDirectory fname
+    print (link, moduleName, dir)
+    createDirectoryIfMissing True dir
+    st <- extractLocalState valStream
+    dataDecls <- evalStateT (resolveDependencies st) initParseState
+    case dataDecls of
+      [] -> return ()
+      _  -> withFileAsOutputExt fname WriteMode NoBuffering $ \outStream -> do
+                inStream <- S.fromList dataDecls >>= S.map (TE.encodeUtf8 . dataDeclToText)
+                S.connect inStream outStream
+      
+
+
+  where
+    -- getLinksFn = docLinks >>= debugInput id "LINKS" S.stdout
+    -- getContentFn = getUrl
+    getLinksFn = docLinksLocal "docs" >>= S.fromList >>= debugInput C8.pack "LINKS" S.stdout
+    getContentFn = C8.readFile
+
 
 -- UTILITIES
 
@@ -149,9 +164,17 @@ lenMaybes :: [Maybe a] -> C8.ByteString
 lenMaybes ml = C8.pack $ (lenStr $ catMaybes ml) </> (lenStr ml)
   where lenStr = show . length
 
+-- | Convert from "docs/some_stuff" to Prefix.SomeStuff
+convertToModule :: FilePath -> FilePath -> FilePath
+convertToModule prefix docName = (prefix'++) . concat $ map camelize pathElems
+  where
+    pathElems = tail $ splitPath docName
+    camelize = T.unpack . toCamelCase . T.pack
+    prefix' = prefix++"."
+
 -- TESTING
-testEstimates inVals = do
-  st <- extractLocalState inVals
-  evalStateT (resolveDependencies st) initParseState
-  
-justEstimates = (S.fromList ["docs/estimates"] >>= getJson C8.readFile)
+-- testEstimates inVals = do
+--   st <- extractLocalState inVals
+--   evalStateT (resolveDependencies st) initParseState
+
+-- justEstimates = (S.fromList ["docs/estimates"] >>= getJson C8.readFile)
