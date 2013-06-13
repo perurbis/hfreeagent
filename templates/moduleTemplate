@@ -1,0 +1,16 @@
+{-# LANGUAGE DeriveDataTypeable        #-}
+{-# LANGUAGE TemplateHaskell           #-}
+module {{modName}} where
+
+import Data.ByteString as BS
+import Data.Aeson
+import Data.Aeson.TH
+import Data.Data
+
+{{#dataDecls}}
+{{.}}
+{{/dataDecls}}
+
+{{#declNames}}
+$(deriveJSON id ''{{.}})
+{{/declNames}}

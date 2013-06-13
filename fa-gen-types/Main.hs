@@ -3,28 +3,33 @@
 module Main where
 
 
-import qualified Blaze.ByteString.Builder   as Builder (fromByteString, toByteString)
+import qualified Blaze.ByteString.Builder      as Builder (fromByteString, toByteString)
 import           Control.Monad
-import           Control.Monad.Trans.State  (evalStateT, execStateT)
+
+import           Control.Monad.Trans.State     (evalStateT, execStateT)
 import           Data.Aeson
-import qualified Data.ByteString            as BS
-import qualified Data.ByteString.Char8      as C8
-import qualified Data.ByteString.Lazy.Char8 as LC8
+import qualified Data.ByteString               as BS
+import qualified Data.ByteString.Char8         as C8
+import qualified Data.ByteString.Lazy          as BL
+import qualified Data.ByteString.Lazy.Char8    as LC8
+import qualified Data.ByteString.Lazy.Internal as BLI
 
 import           Data.Maybe
 import           Data.Monoid
-import qualified Data.Text                  as T
-import qualified Data.Text.Encoding         as TE
+import qualified Data.Text                     as T
+
 import           Network.Http.Client
-import           OpenSSL                    (withOpenSSL)
+import           OpenSSL                       (withOpenSSL)
 import           System.Directory
-import           System.FilePath            (splitPath, takeDirectory, (</>))
+import           System.FilePath               (splitPath, takeDirectory, (</>))
 import           System.IO
-import           System.IO.Streams          (InputStream)
-import qualified System.IO.Streams          as S
+import           System.IO.Streams             (InputStream)
+import qualified System.IO.Streams             as S
 import           System.IO.Streams.Debug
 import           System.IO.Streams.File
 import           Text.HandsomeSoup
+import           Text.Hastache
+import           Text.Hastache.Context
 import           Text.XML.HXT.Core
 
 import           Data.FreeAgent.Generate
@@ -89,7 +94,7 @@ getLinks doc' = fmap (map C8.pack) links
 -- Web page can be local or remode with the appropriate fetchAction
 getJson :: PageFetch a C8.ByteString -> InputStream a -> IO (InputStream Value)
 getJson fetchAction = S.mapM (fetchAction >=> getJsonBlocks)
-                             >=> debugInput lenMaybes "JSON-BLOCKS" S.stdout
+                             -- >=> debugInput lenMaybes "JSON-BLOCKS" S.stdout
                              >=> S.map catMaybes
                              >=> S.concatLists
 
@@ -126,28 +131,31 @@ crawl = do
         inStream <- getUrl lnk >>= S.fromByteString
         S.connect inStream outStream
 
-writeModule :: ModuleName -> [DataDecl a] -> IO ()
-writeModule moduleName = undefined
+-- MODULE WRITING
+moduleTemplate :: ModuleCtx -> IO BLI.ByteString
+moduleTemplate modCtx = hastacheFile defaultConfig "templates/moduleTemplate" $ mkGenericContext modCtx
+
+writeModule :: ModuleName -> [DataDecl T.Text] -> IO BLI.ByteString
+writeModule modName decls = moduleTemplate $ dataDeclsToContext modName decls
 
 main :: IO ()
 main = do
   links <- docLinksLocal "docs"
   byModule <- extractByModule C8.readFile links
-  forM_ (take 5 byModule) $ \(link, valStream) -> do
-    print "----"
+  generatedModules <- forM byModule $ \(link, valStream) -> do
     let moduleName = docLinkToModuleName "Data.FreeAgent.Types" link
     let fname = "src" </> moduleToFileName moduleName
     let dir = takeDirectory fname
-    print (link, moduleName, dir)
     createDirectoryIfMissing True dir
     st <- extractLocalState valStream
     dataDecls <- evalStateT (resolveDependencies st) initParseState
     case dataDecls of
-      [] -> return ()
-      _  -> withFileAsOutputExt fname WriteMode NoBuffering $ \outStream -> do
-                inStream <- S.fromList dataDecls >>= S.map (TE.encodeUtf8 . dataDeclToText)
-                S.connect inStream outStream
-      
+      [] -> return Nothing
+      _  -> writeModule moduleName dataDecls >>= BL.writeFile fname >> (return . Just $ moduleName)
+    --return moduleName
+    
+  mapM_ print $ catMaybes generatedModules
+
 
 
   where

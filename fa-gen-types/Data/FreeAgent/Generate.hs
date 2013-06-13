@@ -1,6 +1,7 @@
-{-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE FlexibleInstances  #-}
-{-# LANGUAGE OverloadedStrings  #-}
+{-# LANGUAGE DeriveDataTypeable        #-}
+{-# LANGUAGE FlexibleInstances         #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
+{-# LANGUAGE OverloadedStrings         #-}
 
 
 
@@ -11,15 +12,18 @@ import           Control.Monad             (forM)
 import           Control.Monad.Trans.State
 import           Data.Aeson                hiding (fromJSON)
 import           Data.Char                 (toUpper)
+import           Data.Data
 import           Data.Function             (on)
 import qualified Data.HashMap.Strict       as HMS
-import           Data.List                 (nubBy, intersperse)
+import           Data.List                 (intersperse, nubBy)
 import           Data.List.Split
 import           Data.Maybe                (catMaybes)
 import qualified Data.Set                  as S
 import qualified Data.Text                 as T
+
 import qualified Data.Vector               as V
 import           System.FilePath
+
 
 type Key = T.Text
 type FieldRep = T.Text
@@ -33,7 +37,7 @@ data DataDecl val = DD {
        colName :: T.Text
      , colType :: val
    }
-   deriving Eq
+   deriving (Eq, Data, Typeable)
 
 type FieldLookup a = HMS.HashMap [Key] (DataDecl a)
 
@@ -41,6 +45,12 @@ data ApiParseState a = APS {
      resolved    :: [DataDecl a]
    , subObjects  :: FieldLookup a
 }
+
+data ModuleCtx = ModuleCtx {
+     modName   :: ModuleName
+   , declNames :: [String]
+   , dataDecls :: [String]
+   } deriving (Data, Typeable)
 
 type ApiState      = StateT (ApiParseState Value) IO
 type ResolvedState = StateT (ApiParseState T.Text) IO
@@ -178,4 +188,11 @@ docLinkToModuleName prefix link = join "." $ prefix:linkElems
 
 moduleToFileName :: ModuleName -> FilePath
 moduleToFileName = addHs . joinPath . sepModule
+
+dataDeclsToContext :: ModuleName -> [DataDecl T.Text] -> ModuleCtx
+dataDeclsToContext modName decls = ModuleCtx {
+                                     modName = modName
+                                   , declNames = (map (T.unpack . getName)        decls)
+                                   , dataDecls = (map (T.unpack . dataDeclToText) decls)
+                                   }
 
