@@ -51,8 +51,26 @@ library
                         Web.FreeAgent.Types
                         Web.FreeAgent.Util
                         Web.FreeAgent.OAuth2
+                        Data.FreeAgent.Types
   -- Need this for emacs?
   other-modules:       Data.FreeAgent.Generate
+                       Data.FreeAgent.Types.Attachments
+                       Data.FreeAgent.Types.BankAccounts
+                       Data.FreeAgent.Types.BankTransactionExplanations
+                       Data.FreeAgent.Types.BankTransactions
+                       Data.FreeAgent.Types.Bills
+                       Data.FreeAgent.Types.Categories
+                       Data.FreeAgent.Types.Company
+                       Data.FreeAgent.Types.Contacts
+                    -- Data.FreeAgent.Types.Estimates
+                       Data.FreeAgent.Types.Expenses
+                       Data.FreeAgent.Types.Invoices
+                       Data.FreeAgent.Types.Notes
+                       Data.FreeAgent.Types.Projects
+                       Data.FreeAgent.Types.QuickStart
+                       Data.FreeAgent.Types.Tasks
+                       Data.FreeAgent.Types.Timeslips
+                       Data.FreeAgent.Types.Users
   ghc-options:          -O2 -Wall -fno-warn-name-shadowing
   build-depends:        base >= 4 && < 5
                       , bytestring
@@ -64,6 +82,7 @@ library
                       , unordered-containers
                       , containers
                       , transformers
+                      , lens
                       , errors
                       , either
                       , io-streams
@@ -98,6 +117,7 @@ executable faGenTypes
                      , unordered-containers
                      , containers
                      , transformers
+                     , lens
                      , io-streams
                      , filepath
                      , directory

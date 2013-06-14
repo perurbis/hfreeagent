@@ -4,8 +4,8 @@ module Main where
 
 
 import qualified Blaze.ByteString.Builder      as Builder (fromByteString, toByteString)
-import           Control.Monad
 
+import           Control.Monad
 import           Control.Monad.Trans.State     (evalStateT, execStateT)
 import           Data.Aeson
 import qualified Data.ByteString               as BS
@@ -30,7 +30,7 @@ import           System.IO.Streams.File
 import           Text.HandsomeSoup
 import           Text.Hastache
 import           Text.Hastache.Context
-import           Text.XML.HXT.Core
+import           Text.XML.HXT.Core hiding (getName)
 
 import           Data.FreeAgent.Generate
 
@@ -142,25 +142,35 @@ main :: IO ()
 main = do
   links <- docLinksLocal "docs"
   byModule <- extractByModule C8.readFile links
-  generatedModules <- forM byModule $ \(link, valStream) -> do
-    let moduleName = docLinkToModuleName "Data.FreeAgent.Types" link
+  generatedModules <- return . fmap catMaybes =<< forM byModule $ \(link, valStream) -> do
+    let moduleName = docLinkToModuleName parentModule link
     let fname = "src" </> moduleToFileName moduleName
     let dir = takeDirectory fname
     createDirectoryIfMissing True dir
     st <- extractLocalState valStream
-    dataDecls <- evalStateT (resolveDependencies st) initParseState
+    dataDecls <- return . filter filterDisabled =<< evalStateT (resolveDependencies st) initParseState
     case dataDecls of
       [] -> return Nothing
       _  -> writeModule moduleName dataDecls >>= BL.writeFile fname >> (return . Just $ moduleName)
-    --return moduleName
-    
-  mapM_ print $ catMaybes generatedModules
+  
+  parent <- writeParent parentModule generatedModules
+  BL.writeFile ("src" </> moduleToFileName parentModule) parent
+  mapM_ putStrLn $ parentModule : generatedModules
 
 
 
   where
     -- getLinksFn = docLinks >>= debugInput id "LINKS" S.stdout
     -- getContentFn = getUrl
+    filterDisabled dd = (getName dd) `notElem` ["TrialBalanceSummary", "RecurringInvoice"]
+    parentModule = "Data.FreeAgent.Types"
+    writeParent parentMod generatedMods = hastacheFile defaultConfig tmpl $ mkStrContext context
+      where
+        context "modName" = MuVariable parentMod
+        context "modules" = MuVariable generatedMods
+        context _ = MuVariable ("" :: String)
+        tmpl = "templates/moduleTemplate"
+    
     getLinksFn = docLinksLocal "docs" >>= S.fromList >>= debugInput C8.pack "LINKS" S.stdout
     getContentFn = C8.readFile
 

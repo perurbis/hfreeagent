@@ -2,15 +2,17 @@
 {-# LANGUAGE TemplateHaskell           #-}
 module {{modName}} where
 
-import Data.ByteString as BS
-import Data.Aeson
-import Data.Aeson.TH
-import Data.Data
+import qualified Data.ByteString as BS
+import           Control.Lens
+import           Data.Aeson
+import           Data.Aeson.TH
+import           Data.Data
 
 {{#dataDecls}}
 {{.}}
 {{/dataDecls}}
 
 {{#declNames}}
-$(deriveJSON id ''{{.}})
+$(deriveJSON tail ''{{.}})
+$(makeLenses      ''{{.}})
 {{/declNames}}

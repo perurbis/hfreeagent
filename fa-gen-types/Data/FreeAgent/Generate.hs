@@ -7,7 +7,7 @@
 
 module Data.FreeAgent.Generate where
 
-import           Control.Arrow             (second)
+import           Control.Arrow             (second, (***))
 import           Control.Monad             (forM)
 import           Control.Monad.Trans.State
 import           Data.Aeson                hiding (fromJSON)
@@ -62,9 +62,10 @@ dataDeclToText :: DataDecl T.Text -> T.Text
 dataDeclToText (DD name fields) = T.unlines $ [nameLine, fieldLines, derivingLine]
   where
     nameLine                        = T.unwords ["data", name, "=", name, "{"]
+    fields'                         = map ((T.cons '_') *** id) fields
     maxLen                          = maximum . map T.length
     fMax = maxLen [f | (f, _) <- fields]
-    fieldLines                      = T.unlines . map fieldToLine $ zip [(0 :: Int)..] fields
+    fieldLines                      = T.unlines . map fieldToLine $ zip [(0 :: Int)..] fields'
     fieldToLine (0, (fname, ftype)) = T.unwords ["   ", T.justifyLeft fMax ' ' fname, "::", ftype]
     fieldToLine (_, (fname, ftype)) = T.unwords ["  ,", T.justifyLeft fMax ' ' fname, "::", ftype]
     derivingLine                    = "} deriving (Show, Data, Typeable)"
@@ -192,7 +193,8 @@ moduleToFileName = addHs . joinPath . sepModule
 dataDeclsToContext :: ModuleName -> [DataDecl T.Text] -> ModuleCtx
 dataDeclsToContext modName decls = ModuleCtx {
                                      modName = modName
-                                   , declNames = (map (T.unpack . getName)        decls)
+                                   , declNames = (map (T.unpack . getName) . filter isData $ decls)
                                    , dataDecls = (map (T.unpack . dataDeclToText) decls)
                                    }
-
+  where isData (DD  _ _) = True
+        isData (Col _ _) = False

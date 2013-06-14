@@ -1,0 +1,5 @@
+module {{modName}} where
+
+{{#modules}
+import {{.}}
+{{/module}}
