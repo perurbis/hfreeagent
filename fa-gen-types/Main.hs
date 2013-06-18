@@ -6,6 +6,7 @@ module Main where
 import qualified Blaze.ByteString.Builder      as Builder (fromByteString, toByteString)
 
 import           Control.Monad
+import           Control.Monad.IO.Class
 import           Control.Monad.Trans.State     (evalStateT, execStateT)
 import           Data.Aeson
 import qualified Data.ByteString               as BS
@@ -30,7 +31,7 @@ import           System.IO.Streams.File
 import           Text.HandsomeSoup
 import           Text.Hastache
 import           Text.Hastache.Context
-import           Text.XML.HXT.Core hiding (getName)
+import           Text.XML.HXT.Core             hiding (getName)
 
 import           Data.FreeAgent.Generate
 
@@ -132,8 +133,11 @@ crawl = do
         S.connect inStream outStream
 
 -- MODULE WRITING
+faConfig :: (MonadIO m) => MuConfig m
+faConfig = defaultConfig {muEscapeFunc = emptyEscape}
+
 moduleTemplate :: ModuleCtx -> IO BLI.ByteString
-moduleTemplate modCtx = hastacheFile defaultConfig "templates/moduleTemplate" $ mkGenericContext modCtx
+moduleTemplate modCtx = hastacheFile faConfig "templates/moduleTemplate" $ mkGenericContext modCtx
 
 writeModule :: ModuleName -> [DataDecl T.Text] -> IO BLI.ByteString
 writeModule modName decls = moduleTemplate $ dataDeclsToContext modName decls
@@ -152,7 +156,7 @@ main = do
     case dataDecls of
       [] -> return Nothing
       _  -> writeModule moduleName dataDecls >>= BL.writeFile fname >> (return . Just $ moduleName)
-  
+
   parent <- writeParent parentModule generatedModules
   BL.writeFile ("src" </> moduleToFileName parentModule) parent
   mapM_ putStrLn $ parentModule : generatedModules
@@ -164,13 +168,13 @@ main = do
     -- getContentFn = getUrl
     filterDisabled dd = (getName dd) `notElem` ["TrialBalanceSummary", "RecurringInvoice"]
     parentModule = "Data.FreeAgent.Types"
-    writeParent parentMod generatedMods = hastacheFile defaultConfig tmpl $ mkStrContext context
+    writeParent parentMod generatedMods = hastacheFile faConfig tmpl $ mkStrContext context
       where
         context "modName" = MuVariable parentMod
-        context "modules" = MuVariable generatedMods
+        context "modules" = MuList $ map (mkStrContext . const . MuVariable)  generatedMods
         context _ = MuVariable ("" :: String)
-        tmpl = "templates/moduleTemplate"
-    
+        tmpl = "templates/parentModuleTemplate"
+
     getLinksFn = docLinksLocal "docs" >>= S.fromList >>= debugInput C8.pack "LINKS" S.stdout
     getContentFn = C8.readFile
 

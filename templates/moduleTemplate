@@ -1,8 +1,10 @@
-{-# LANGUAGE DeriveDataTypeable        #-}
-{-# LANGUAGE TemplateHaskell           #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE DeriveDataTypeable  #-}
+{-# LANGUAGE TemplateHaskell     #-}
 module {{modName}} where
 
 import qualified Data.ByteString as BS
+import           Control.Applicative ((<$>), (<*>), empty)
 import           Control.Lens
 import           Data.Aeson
 import           Data.Aeson.TH
@@ -12,7 +14,12 @@ import           Data.Data
 {{.}}
 {{/dataDecls}}
 
+{{#fromJSONs}}
+{{.}}
+{{/fromJSONs}}
+
+
 {{#declNames}}
-$(deriveJSON tail ''{{.}})
+$(deriveToJSON tail ''{{.}})
 $(makeLenses      ''{{.}})
 {{/declNames}}

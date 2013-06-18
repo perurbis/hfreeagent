@@ -18,6 +18,7 @@ import qualified Data.HashMap.Strict       as HMS
 import           Data.List                 (intersperse, nubBy)
 import           Data.List.Split
 import           Data.Maybe                (catMaybes)
+import           Data.Monoid
 import qualified Data.Set                  as S
 import qualified Data.Text                 as T
 
@@ -50,6 +51,7 @@ data ModuleCtx = ModuleCtx {
      modName   :: ModuleName
    , declNames :: [String]
    , dataDecls :: [String]
+   , fromJSONs :: [String]
    } deriving (Data, Typeable)
 
 type ApiState      = StateT (ApiParseState Value) IO
@@ -64,12 +66,32 @@ dataDeclToText (DD name fields) = T.unlines $ [nameLine, fieldLines, derivingLin
     nameLine                        = T.unwords ["data", name, "=", name, "{"]
     fields'                         = map ((T.cons '_') *** id) fields
     maxLen                          = maximum . map T.length
-    fMax = maxLen [f | (f, _) <- fields]
+    fMax                            = 1 + maxLen [f | (f, _) <- fields]
     fieldLines                      = T.unlines . map fieldToLine $ zip [(0 :: Int)..] fields'
     fieldToLine (0, (fname, ftype)) = T.unwords ["   ", T.justifyLeft fMax ' ' fname, "::", ftype]
     fieldToLine (_, (fname, ftype)) = T.unwords ["  ,", T.justifyLeft fMax ' ' fname, "::", ftype]
     derivingLine                    = "} deriving (Show, Data, Typeable)"
 dataDeclToText (Col name val) = T.unwords ["type", name, "=", val]
+
+dataDeclDeriveToJSON :: DataDecl T.Text -> T.Text
+dataDeclDeriveToJSON (DD name fields) = T.unlines $ [
+                                                      instanceLine
+                                                    , parseJSONObj
+                                                    , ddFields
+                                                    , parseJSON_
+                                                    ]
+  where
+    instanceLine                    = T.unwords ["instance FromJSON", name, "where"]
+    parseJSONObj                    = T.unwords ["  parseJSON (Object v) =", name, "<$>"]
+    fields'                         = reverse [fname | (fname, _) <- fields]
+    fieldWhiteSpace                 = T.length "  parseJSON (Object v) = "
+    ddFields                        = T.unlines . map fieldToLine . reverse $ zip [(0 :: Int)..] fields'
+    fieldToLine (0, fname)          = T.unwords [T.justifyRight fieldWhiteSpace ' ' "v .:", quotedField fname]
+    fieldToLine (_, fname)          = T.unwords [T.justifyRight fieldWhiteSpace ' ' "v .:", quotedField fname, "<*>"]
+    quotedField fname               = "\"" <> fname <> "\""
+    parseJSON_                      = "  parseJSON _            = empty"
+dataDeclDeriveToJSON _ = T.empty
+
 
 instance Show (DataDecl T.Text) where
   show = T.unpack . dataDeclToText
@@ -194,7 +216,8 @@ dataDeclsToContext :: ModuleName -> [DataDecl T.Text] -> ModuleCtx
 dataDeclsToContext modName decls = ModuleCtx {
                                      modName = modName
                                    , declNames = (map (T.unpack . getName) . filter isData $ decls)
-                                   , dataDecls = (map (T.unpack . dataDeclToText) decls)
+                                   , dataDecls = (map (T.unpack . dataDeclToText)            decls)
+                                   , fromJSONs = (map (T.unpack . dataDeclDeriveToJSON)      decls)
                                    }
   where isData (DD  _ _) = True
         isData (Col _ _) = False
