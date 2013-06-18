@@ -53,7 +53,8 @@ library
                         Web.FreeAgent.OAuth2
                         Data.FreeAgent.Types
   -- Need this for emacs?
-  other-modules:       Data.FreeAgent.Generate
+--  other-modules:       
+                       Data.FreeAgent.Generate
                        Data.FreeAgent.Types.Attachments
                        Data.FreeAgent.Types.BankAccounts
                        Data.FreeAgent.Types.BankTransactionExplanations
