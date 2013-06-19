@@ -6,18 +6,12 @@ module Web.FreeAgent.OAuth2 where
 
 
 import           Control.Monad.IO.Class          (MonadIO, liftIO)
-
-import           Data.Aeson.Generic
 import qualified Data.ByteString                 as BS
 import qualified Data.ByteString.Char8           as C8
-
-
-
 import           Network.Http.Client
 import           Network.OAuth.OAuth2
 import           Network.OAuth.OAuth2.HttpClient
 import           OpenSSL                         (withOpenSSL)
-
 
 import           Web.FreeAgent.Types
 import           Web.FreeAgent.Util
@@ -60,9 +54,9 @@ refresh = withOpenSSL $ do
   c <- openConnectionSSL ctx baseFAHost 443
   r <- faRefreshRequest faRefreshToken
   sendRequest c r emptyBody
-  resp <- receiveResponse c concatHandler
+  resp <- receiveResponse c aesonHandler
   closeConnection c
-  return . decode . fromStrict $ resp
+  return resp
 
 getToken :: Token -> FAMonad IO Token
 getToken token = do
