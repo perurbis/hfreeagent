@@ -1,13 +1,13 @@
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE DeriveDataTypeable  #-}
-{-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE OverloadedStrings  #-}
+{-# LANGUAGE TemplateHaskell    #-}
 module Data.FreeAgent.Types.Expenses where
 
-import qualified Data.ByteString as BS
-import           Control.Applicative ((<$>), (<*>), empty)
+import           Control.Applicative (empty, (<$>), (<*>))
 import           Control.Lens
 import           Data.Aeson
 import           Data.Aeson.TH
+import qualified Data.ByteString     as BS
 import           Data.Data
 
 data Expense = Expense {
@@ -16,10 +16,10 @@ data Expense = Expense {
   , _description             :: BS.ByteString -- Some description
   , _user                    :: BS.ByteString -- https://api.freeagent.com/v2/users/1
   , _category                :: BS.ByteString -- https://api.freeagent.com/v2/categories/285
-  , _attachment              :: Attachment
-  , _sales_tax_rate          :: BS.ByteString -- 20.0
+  , _attachment              :: Maybe Attachment
+  , _sales_tax_rate          :: Maybe BS.ByteString -- 20.0
   , _gross_value             :: BS.ByteString -- -12.0
-  , _manual_sales_tax_amount :: BS.ByteString -- 0.12
+  , _manual_sales_tax_amount :: Maybe BS.ByteString -- 0.12
   , _updated_at              :: BS.ByteString -- 2011-08-24T08:10:40Z
 
 } deriving (Show, Data, Typeable)
@@ -37,16 +37,16 @@ data Attachment = Attachment {
 
 instance FromJSON Expense where
   parseJSON (Object v) = Expense <$>
-                     v .: "dated_on" <*>
-                     v .: "created_at" <*>
-                     v .: "description" <*>
-                     v .: "user" <*>
-                     v .: "category" <*>
-                     v .: "attachment" <*>
-                     v .: "sales_tax_rate" <*>
-                     v .: "gross_value" <*>
-                     v .: "manual_sales_tax_amount" <*>
-                     v .: "updated_at"
+                     v .:  "dated_on" <*>
+                     v .:  "created_at" <*>
+                     v .:  "description" <*>
+                     v .:  "user" <*>
+                     v .:  "category" <*>
+                     v .:? "attachment" <*>
+                     v .:? "sales_tax_rate" <*>
+                     v .:  "gross_value" <*>
+                     v .:? "manual_sales_tax_amount" <*>
+                     v .:  "updated_at"
 
   parseJSON _            = empty
 
